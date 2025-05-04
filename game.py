@@ -13,9 +13,9 @@ class Player:
     def __init__(self, name, is_ai=False, cards_dir="cards"):
         self.name = name
         self.score = 0
-        self.hand = []
+        self.hand: list[Card] = [] # List of card filenames (e.g., "001.png")
         self.is_ai = is_ai
-        self.cards_dir = cards_dir
+        self.cards_dir = cards_dir # Store cards directory path
 
     def _get_full_card_path(self, card_filename):
         """Helper to get the full path to a card image."""
@@ -30,27 +30,30 @@ class Player:
             print(f"  {i}: {card_file}")
 
     def provide_clue(self):
-        """Storyteller provides a clue and selects a card."""
+        """Storyteller provides a clue and selects a card. Returns (clue, chosen_card_filename)."""
         if not self.hand:
             print(f"{self.name} has no cards to play.")
-            return None, None # Return None if no cards
+            return None, None
 
         if self.is_ai:
             print(f"{self.name} (AI) is choosing a card and thinking of a clue...")
             # AI Logic:
-            # 1. Select a card (e.g., randomly for now, could be smarter later)
-            chosen_card_filename = random.choice(self.hand)
+            # 1. Select a card index (randomly for now, could be smarter later)
+            #    Could ask AI to pick its "most evocative" card, but let's keep it simple.
+            chosen_card_index = random.randrange(len(self.hand))
+            chosen_card_filename = self.hand[chosen_card_index]
             chosen_card_path = self._get_full_card_path(chosen_card_filename)
+            print(f"{self.name} (AI) tentatively chose card {chosen_card_filename} (index {chosen_card_index}). Generating clue...")
 
-            # 2. Generate clue using AI
+            # 2. Generate clue using AI for the chosen card
             clue = generate_clue_for_image(chosen_card_path)
             if clue is None:
                 print(f"Warning: AI {self.name} failed to generate clue for {chosen_card_filename}. Using fallback.")
-                clue = f"AI Clue for {chosen_card_filename.split('.')[0]}" # Fallback clue
+                clue = f"AI Clue: {chosen_card_filename.split('.')[0]}" # Fallback clue
 
-            # 3. Remove card from hand
-            self.hand.remove(chosen_card_filename)
-            print(f"{self.name} (AI) chose card {chosen_card_filename} with clue: '{clue}'")
+            # 3. Remove card from hand *using the index*
+            self.hand.pop(chosen_card_index)
+            print(f"{self.name} (AI) confirmed card {chosen_card_filename} with clue: '{clue}'")
             return clue, chosen_card_filename
         else:
             # Human Input
@@ -76,7 +79,7 @@ class Player:
                      print("Error: Hand index out of bounds unexpectedly.")
 
     def submit_card(self, clue):
-        """Non-storyteller submits a card matching the clue."""
+        """Non-storyteller submits a card matching the clue. Returns submitted_card_filename."""
         if not self.hand:
             print(f"{self.name} has no cards to submit.")
             return None
@@ -86,23 +89,17 @@ class Player:
             # AI Logic:
             # 1. Get full paths for AI evaluation
             hand_paths = [self._get_full_card_path(f) for f in self.hand]
-            # 2. Use AI to choose the best card path
-            chosen_card_path = choose_card_for_clue(hand_paths, clue)
+            # 2. Use AI to choose the best card *index*
+            chosen_index = choose_card_for_clue(hand_paths, clue)
 
-            if chosen_card_path is None:
-                # Fallback if AI fails or returns None
-                print(f"Warning: AI {self.name} failed to choose card via AI. Choosing randomly.")
-                submitted_card_filename = random.choice(self.hand)
-            else:
-                submitted_card_filename = os.path.basename(chosen_card_path)
-                # Ensure the chosen card is actually in the hand (robustness)
-                if submitted_card_filename not in self.hand:
-                    print(f"Warning: AI chose card {submitted_card_filename} which is not in hand. Choosing randomly.")
-                    submitted_card_filename = random.choice(self.hand)
+            if chosen_index is None or not (0 <= chosen_index < len(self.hand)):
+                # Fallback if AI fails or returns invalid index
+                print(f"Warning: AI {self.name} failed to choose valid card index via AI ({chosen_index}). Choosing randomly.")
+                chosen_index = random.randrange(len(self.hand))
 
-            # 3. Remove from hand
-            self.hand.remove(submitted_card_filename)
-            print(f"{self.name} (AI) submitted card {submitted_card_filename}")
+            # 3. Get the filename and remove from hand using the index
+            submitted_card_filename = self.hand.pop(chosen_index)
+            print(f"{self.name} (AI) submitted card {submitted_card_filename} (index {chosen_index})")
             return submitted_card_filename
         else:
             # Human Input
@@ -125,22 +122,24 @@ class Player:
 
 
     def guess_card(self, displayed_cards, clue, player_submitted_card_filename):
-        """Player guesses which card was the storyteller's.
-        `displayed_cards` is a list of card filenames.
-        `player_submitted_card_filename` is the filename the current player submitted.
+        """Player guesses the storyteller's card *index*.
+        `displayed_cards` is a list of card filenames on the board.
+        `player_submitted_card_filename` is the filename the current player submitted (or None if storyteller/failed).
+        Returns the guessed index (relative to `displayed_cards`).
         """
         print(f"{self.name}, guess the storyteller's card for clue '{clue}':")
         for i, card_filename in enumerate(displayed_cards):
-            print(f"  {i}: {card_filename}")
+            is_own = " (Your Card)" if card_filename == player_submitted_card_filename else ""
+            print(f"  {i}: {card_filename}{is_own}")
 
         if self.is_ai:
-            print(f"{self.name} (AI) is guessing... (Cannot guess own card: {player_submitted_card_filename})")
+            print(f"{self.name} (AI) is guessing...")
             # AI Logic:
             # 1. Get full paths for board cards
             board_paths = [self._get_full_card_path(f) for f in displayed_cards]
-            player_card_path = self._get_full_card_path(player_submitted_card_filename)
+            player_card_path = self._get_full_card_path(player_submitted_card_filename) if player_submitted_card_filename else None
 
-            # 2. Use AI to guess (it handles excluding own card)
+            # 2. Use AI to guess the index
             guess_index = guess_storyteller_card(board_paths, clue, player_card_path)
 
             # Basic validation on returned index
@@ -148,9 +147,9 @@ class Player:
                  print(f"Warning: AI returned invalid guess index {guess_index}. Guessing randomly (excluding own)." )
                  possible_indices = [i for i, fname in enumerate(displayed_cards) if fname != player_submitted_card_filename]
                  guess_index = random.choice(possible_indices) if possible_indices else 0
-            # Ensure AI doesn't guess its own card (redundant check if AI function works correctly)
+            # Ensure AI doesn't guess its own card (redundant check)
             elif displayed_cards[guess_index] == player_submitted_card_filename:
-                 print(f"Warning: AI guess ({guess_index}) matched own card. Guessing randomly (excluding own)." )
+                 print(f"Warning: AI guess ({guess_index}) matched own card. Re-choosing randomly." )
                  possible_indices = [i for i, fname in enumerate(displayed_cards) if fname != player_submitted_card_filename]
                  guess_index = random.choice(possible_indices) if possible_indices else 0
 
@@ -163,18 +162,23 @@ class Player:
                     guess_index_str = input(f"Enter your guess index (0-{len(displayed_cards)-1}): ")
                     guess_index = int(guess_index_str)
 
+                    # Validate index range first
+                    if not (0 <= guess_index < len(displayed_cards)):
+                         print("Invalid index.")
+                         continue
+
                     # Prevent voting for own card
                     if displayed_cards[guess_index] == player_submitted_card_filename:
                          print("You cannot vote for your own card. Try again.")
                          continue
 
-                    if 0 <= guess_index < len(displayed_cards):
-                        print(f"{self.name} guessed index {guess_index} ({displayed_cards[guess_index]})")
-                        return guess_index
-                    else:
-                        print("Invalid index.")
+                    # Valid guess
+                    print(f"{self.name} guessed index {guess_index} ({displayed_cards[guess_index]})")
+                    return guess_index
+
                 except ValueError:
                     print("Invalid input. Please enter a number for the index.")
+                # IndexError check might be redundant due to range check above, but keep for safety
                 except IndexError:
                     print("Index out of range.")
 
@@ -183,14 +187,17 @@ class Game:
     def __init__(self, player_names, hand_size=6, max_score=30, cards_directory="cards"):
         self.hand_size = hand_size
         self.max_score = max_score
-        self.cards_directory = cards_directory
-        self.players = [Player(name, is_ai=("AI" in name), cards_dir=self.cards_directory) for name in player_names]
+        self.cards_directory = cards_directory # Store directory
+        # Initialize deck first
         self.deck = self._load_and_shuffle_cards(self.cards_directory)
+        # Pass cards_dir to Player
+        self.players = [Player(name, is_ai=("AI" in name), cards_dir=self.cards_directory) for name in player_names]
+
+        # Check deck sufficiency and attempt dummy card creation AFTER players are initialized
         if not self.deck or len(self.deck) < len(self.players) * self.hand_size:
-             # Attempt to create dummy cards if deck is insufficient/missing
              print(f"Warning: Not enough cards ({len(self.deck)}) in '{self.cards_directory}'. Attempting to create dummy files.")
              if self._create_dummy_cards(len(player_names), hand_size):
-                  self.deck = self._load_and_shuffle_cards(self.cards_directory)
+                  self.deck = self._load_and_shuffle_cards(self.cards_directory) # Reload deck
                   if not self.deck or len(self.deck) < len(self.players) * self.hand_size:
                        raise ValueError(f"Still not enough cards after creating dummies. Need at least {len(self.players) * self.hand_size}.")
              else:
@@ -198,41 +205,54 @@ class Game:
 
         self._deal_cards()
         self.storyteller_index = 0
-        self.discard_pile = []
+        self.discard_pile: list[Card] = []
         self.board = [] # Cards currently in play: { 'player': Player, 'card': CardFilename }
         self.current_clue = ""
 
     def _create_dummy_cards(self, num_players, hand_size):
         """Creates dummy card files if the directory is missing or empty."""
+        # Calculate how many cards are currently in the deck (if any)
+        current_deck_size = len(self.deck) if self.deck else 0
+
         if not os.path.isdir(self.cards_directory):
              print(f"Creating card directory: {self.cards_directory}")
              os.makedirs(self.cards_directory, exist_ok=True)
+
         num_needed = num_players * hand_size + (num_players * 5) # Estimate needed
-        num_to_create = num_needed - len(self.deck) # Only create missing
+        num_to_create = max(0, num_needed - current_deck_size) # Only create if needed
+
+        if num_to_create == 0:
+            print("Sufficient dummy cards likely exist.")
+            return True # No need to create more
+
         print(f"Attempting to create {num_to_create} dummy card files...")
         created_count = 0
-        existing_files = os.listdir(self.cards_directory)
-        max_existing_num = 0
-        for fname in existing_files:
-             if fname.lower().endswith('.png'):
-                  try:
-                       num = int(fname.split('.')[0])
-                       max_existing_num = max(max_existing_num, num)
-                  except ValueError: pass
+        try:
+            existing_files = os.listdir(self.cards_directory)
+            max_existing_num = 0
+            for fname in existing_files:
+                 if fname.lower().endswith('.png'):
+                      try:
+                           num = int(fname.split('.')[0])
+                           max_existing_num = max(max_existing_num, num)
+                      except (ValueError, IndexError): pass
 
-        for i in range(max_existing_num + 1, max_existing_num + 1 + num_to_create):
-            filename = f"{i:03d}.png"
-            filepath = os.path.join(self.cards_directory, filename)
-            try:
-                with open(filepath, 'w') as f:
-                    f.write("") # Create empty files
-                created_count += 1
-            except IOError as e:
-                print(f"Error creating dummy file {filename}: {e}")
-                return False
-        if created_count > 0:
-             print(f"Created {created_count} dummy card files.")
-        return True
+            for i in range(max_existing_num + 1, max_existing_num + 1 + num_to_create):
+                filename = f"{i:03d}.png"
+                filepath = os.path.join(self.cards_directory, filename)
+                try:
+                    with open(filepath, 'w') as f:
+                        f.write("") # Create empty files
+                    created_count += 1
+                except IOError as e:
+                    print(f"Error creating dummy file {filename}: {e}")
+                    # Don't necessarily fail the whole process, maybe enough were created
+            if created_count > 0:
+                 print(f"Created {created_count} dummy card files.")
+            return True # Signal success even if some minor errors occurred
+        except Exception as e:
+             print(f"Error during dummy card creation setup: {e}")
+             return False
 
     def _load_and_shuffle_cards(self, cards_directory):
         """Loads card identifiers (filenames) from the directory and shuffles them."""
@@ -255,6 +275,8 @@ class Game:
         """Deals cards to each player."""
         print("Dealing cards...")
         for player in self.players:
+            # Clear existing hand first?
+            # player.hand = [] # Uncomment if hands shouldn't accumulate on restart
             while len(player.hand) < self.hand_size and self.deck:
                 player.hand.append(self.deck.pop())
 
@@ -414,8 +436,6 @@ class Game:
             while len(player.hand) < self.hand_size and self.deck:
                 player.hand.append(self.deck.pop())
                 drew_count += 1
-            # if drew_count > 0:
-                 # print(f" {player.name} drew {drew_count} card(s). Remaining deck: {len(self.deck)}") # Verbose
             if not self.deck and len(player.hand) < self.hand_size:
                  print(f"Warning: Deck became empty, {player.name} could not draw up to {self.hand_size} cards (has {len(player.hand)})." )
 
