@@ -7,7 +7,7 @@ python-dotenv
 streamlit
 
 # Potentially needed for API calls (uncomment if using requests)
-# requests
+requests
 
 # Add any other libraries you might need, e.g., a specific Llama client library
 # llama-client-library 

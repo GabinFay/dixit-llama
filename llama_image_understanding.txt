@@ -1,0 +1,49 @@
+Color the wolves in red and the villagers in blue and the seer in green, sorceress in blue, and hunter in yellow in the chat.
+
+
+Llama API
+Preview
+Get started
+Essentials
+Features
+Guides
+API reference
+Resources
+Image understanding
+Llama models offer native support for understanding and interpreting of visual content alongside text. This multimodal capability opens up new possibilities for interacting with images, extracting information, and automating visual tasks.
+How it works
+Image understanding allows Llama API to process model requests that include both text prompts and images. The model can analyze image content and perform tasks such as:
+•Describing scenes: Generate detailed descriptions of what's happening in an image.
+•Answering questions: Respond to specific queries about the objects, people, or actions within an image.
+•Extracting information: Pull text, data, or key elements from images like charts, diagrams, or documents.
+•Analyzing content: Identify objects, understand relationships, and categorize visual information.
+Benefits and use cases
+Integrating image understanding enables you to build richer, more intuitive applications:
+•Enhance Accessibility: Automatically generate descriptions for images, making visual content accessible to users with visual impairments.
+•Automate Content Moderation: Identify potentially sensitive or inappropriate content in uploaded images.
+•Improve E-commerce: Analyze product photos, categorize items, or enable visual search.
+•Streamline Data Analysis: Interpret charts, graphs, and infographics presented as images.
+•Process Documents: Extract key information from scanned documents, receipts, or forms.
+Supported image formats
+See below for supported formats and size limits when using images with Llama API.
+•Max file size: 25MB
+•Image allowance per team: 10GB
+•Supported MIME types:image/jpeg, image/jpg, image/png, image/gif, image/x-icon
+How to use
+You can send an image and a text prompt to the Llama API using a standard HTTP request. Here's how to ask the API to describe an image using cURL:
+curl
+123456789101112131415161718192021
+curl -X POST https://api.llama.com/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $LLAMA_API_KEY" \
+  -d '{
+    "model": "Llama-4-Maverick-17B-128E-Instruct-FP8",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "text", "text": "Describe this image in detail."},
+…  }'
+Next steps
+Explore the full capabilities of Llama API with these resources:
+•API Reference: Read the chat completion API Reference documentation for specific parameters and endpoint details.
