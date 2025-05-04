@@ -1,0 +1,13 @@
+# Python dependencies for the Dixit Llama project
+
+# For loading environment variables
+python-dotenv
+
+# For the web interface
+streamlit
+
+# Potentially needed for API calls (uncomment if using requests)
+# requests
+
+# Add any other libraries you might need, e.g., a specific Llama client library
+# llama-client-library 
