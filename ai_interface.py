@@ -127,7 +127,7 @@ def generate_clue_for_image(image_path):
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Generate a short, evocative, one-sentence clue for this image, suitable for the card game Dixit. Avoid describing the image literally. Focus on themes, feelings, or abstract concepts."},
+                    {"type": "text", "text": "You are an AI playing the card game Dixit. Your goal as the storyteller is to provide a short, one-sentence clue for the image below. \\n\\nDixit Rules Reminder: \\n- You get 0 points if *everyone* guesses your card (clue was too obvious).\\n- You get 0 points if *no one* guesses your card (clue was too obscure).\\n- You get 3 points if *some*, but not all, players guess your card. \\n\\nStrategy: Give an evocative, metaphorical, or abstract clue. Avoid literal descriptions. Aim for ambiguity so the clue *could* potentially relate to other cards, but still strongly connects to yours. Keep it concise."},\
                     {
                         "type": "image_url",
                         "image_url": {"url": f"data:image/png;base64,{base64_image}"} # Assuming PNG
@@ -135,7 +135,7 @@ def generate_clue_for_image(image_path):
                 ]
             }
         ],
-        "max_tokens": DEFAULT_MAX_TOKENS // 2
+        "max_tokens": DEFAULT_MAX_TOKENS // 2 # Allow slightly more tokens for better clues
     }
     return _call_llama_api(payload)
 
@@ -147,7 +147,7 @@ def choose_card_for_clue(hand_card_paths, clue):
     print(f"AI evaluating {len(hand_card_paths)} cards for clue: '{clue}'")
 
     content_list = [
-        {"type": "text", "text": f"Given the Dixit clue '{clue}', which of the following images (indexed 0 to {len(hand_card_paths)-1}) is the best fit? Respond with only the index number."}
+        {"type": "text", "text": f"You are an AI player in the game Dixit. The storyteller gave the clue: '{clue}'. Which of the following images from your hand (indexed 0 to {len(hand_card_paths)-1}) is the best fit for this clue? Your goal is to trick other players into guessing your card instead of the storyteller's. Respond with only the index number of your chosen card."}
     ]
 
     valid_images_indices = []
@@ -199,43 +199,44 @@ def guess_storyteller_card(board_card_paths, clue, player_card_path):
     prompt_idx = 0
     image_content = []
 
-    # Prepare image data first
-    for i, card_path in enumerate(board_card_paths):
-        if card_path == player_card_path:
-             print(f" - Skipping own card at board index {i}")
-             continue # Skip player's own card
+    # Add text prompt first, explaining the goal and rules
+    # Removed exclusion of player's own card here, will filter *after* AI response
+    text_prompt = (
+        f"You are an AI player in the game Dixit. The storyteller gave the clue: '{clue}'. "
+        f"Below are {len(board_card_paths)} cards submitted by players (indexed 0 to {len(board_card_paths) - 1}). "
+        f"One of these is the storyteller's original card. Your goal is to identify the storyteller's card. "
+        f"Remember the storyteller wants to be ambiguous (not too obvious, not too obscure). "
+        f"Consider the theme and feeling of the clue, not just literal matches. "
+        f"Also, you submitted the card located at path '{os.path.basename(player_card_path)}' if it's provided; do not guess your own card. "
+        f"Which card index (0 to {len(board_card_paths) - 1}) is MOST LIKELY the storyteller's original card based on the clue? "
+        f"Respond with only the index number."
+    )
+    content_list.append({"type": "text", "text": text_prompt})
 
+    # Add images, keeping track of original indices
+    for i, card_path in enumerate(board_card_paths):
+        # We still need to encode all images for the AI to see them
         base64_image = encode_image(card_path)
         if base64_image:
             image_content.append({
                 "type": "image_url",
                 "image_url": {"url": f"data:image/png;base64,{base64_image}"}
             })
-            index_map[prompt_idx] = i # Map the index in the prompt to the original board index
+            # Store mapping from the prompt's image order to the original board index
+            index_map[prompt_idx] = i
             prompt_idx += 1
         else:
             print(f"Warning: Could not encode image {card_path} for guessing prompt.")
 
-    num_options_in_prompt = len(image_content)
-
-    if num_options_in_prompt == 0:
-        print("Error: No valid images (excluding own) to guess from.")
-        # Fallback: guess randomly from original board excluding own card
-        valid_indices = [idx for idx, path in enumerate(board_card_paths) if path != player_card_path]
-        return random.choice(valid_indices) if valid_indices else 0
-    elif num_options_in_prompt == 1:
-         # Only one other card left, must be the storyteller's
-         guessed_original_index = list(index_map.values())[0]
-         print(f"Only one valid option (Board Index {guessed_original_index}). Guessing that.")
-         return guessed_original_index
-
-    # Construct the text part of the prompt
-    content_list.append({
-        "type": "text",
-        "text": f"Given the Dixit clue '{clue}', which of the following images (indexed 0 to {num_options_in_prompt-1}) is most likely the storyteller's card? Respond with only the index number."
-    })
-    # Add the image content
+    # Combine text and images
     content_list.extend(image_content)
+
+    # Ensure there are images to guess from
+    if not image_content:
+        print("Warning: No valid images on the board to guess from.")
+        # Fallback: Guess randomly among possible indices (excluding own if known)
+        possible_indices = [i for i, fname in enumerate(board_card_paths) if fname != player_card_path]
+        return random.choice(possible_indices) if possible_indices else 0
 
     payload = {
         "model": MODEL,
@@ -246,24 +247,32 @@ def guess_storyteller_card(board_card_paths, clue, player_card_path):
     }
 
     response_text = _call_llama_api(payload)
-    # Parse the index relative to the prompt (0 to num_options_in_prompt-1)
-    parsed_prompt_index = _parse_ai_index_response(response_text, num_options_in_prompt)
 
-    if parsed_prompt_index is not None:
-        # Map back to the original board index
-        guessed_original_index = index_map.get(parsed_prompt_index)
-        if guessed_original_index is not None:
-            print(f"AI chose prompt index: {parsed_prompt_index}, which maps to board index: {guessed_original_index}")
-            return guessed_original_index
-        else:
-             print(f"Error: AI returned valid prompt index {parsed_prompt_index}, but mapping failed.")
-    else:
-        print(f"AI failed to provide a valid index response.")
+    # Parse the index from the response (relative to the images shown in the prompt)
+    parsed_prompt_index = _parse_ai_index_response(response_text, prompt_idx) # Use prompt_idx as the upper bound
 
-    # Fallback if AI fails or returns invalid index
-    print("Choosing randomly (excluding own card)." )
-    valid_indices = [idx for idx, path in enumerate(board_card_paths) if path != player_card_path]
-    return random.choice(valid_indices) if valid_indices else 0 # Return random valid *original* board index
+    # Fallback strategy
+    if parsed_prompt_index is None:
+        print(f"AI failed to provide a valid index. Choosing randomly (excluding own).")
+        possible_indices = [i for i, path in enumerate(board_card_paths) if path != player_card_path]
+        return random.choice(possible_indices) if possible_indices else 0 # Return random valid index
+
+    # Convert the parsed index (from the AI prompt order) back to the original board index
+    original_guess_index = index_map.get(parsed_prompt_index)
+
+    if original_guess_index is None:
+        print(f"Error: Could not map parsed index {parsed_prompt_index} back to original board index. Choosing randomly.")
+        possible_indices = [i for i, path in enumerate(board_card_paths) if path != player_card_path]
+        return random.choice(possible_indices) if possible_indices else 0
+
+    # Final check: Ensure the AI didn't guess its own card (even though instructed not to)
+    if board_card_paths[original_guess_index] == player_card_path:
+        print(f"Warning: AI guess ({original_guess_index}) matched its own card ({os.path.basename(player_card_path)}). Re-choosing randomly.")
+        possible_indices = [i for i, path in enumerate(board_card_paths) if path != player_card_path]
+        return random.choice(possible_indices) if possible_indices else 0 # Return random valid index (excluding own)
+
+    print(f"AI guessed original index: {original_guess_index}")
+    return original_guess_index
 
 
 # Example usage (optional, for testing)
